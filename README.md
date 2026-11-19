@@ -2,7 +2,6 @@
 
 **English** | [中文](README.zh-CN.md)
 
-[![CI](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/yunjianmanbu/pilot-connector?color=blue)](https://github.com/yunjianmanbu/pilot-connector/releases)
 [![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
@@ -16,7 +15,7 @@ deploy your own.
 
 > **Operators and users:** a relay is for your own devices, or devices you are authorized to control.
 > Project policy, prohibited uses, the abuse reporting channel (`[ABUSE]`) and the operator's
-> cut-off levers are in [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md).
+> cut-off levers are in [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md).
 
 ## Download
 
@@ -189,7 +188,7 @@ operator-side abuse handling is deliberately **coarse**: cut the source off, nev
    you into "holding users' data" territory.
 5. What this cannot do: it cannot stop someone running their own relay or a self-compiled client.
    The project policy, reporting channel and response commitments are in
-   [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md).
+   [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md).
 
 ## License
 

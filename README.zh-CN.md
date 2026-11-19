@@ -2,13 +2,17 @@
 
 [English](README.md) | **中文**
 
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/yunjianmanbu/pilot-connector?color=blue)](https://github.com/yunjianmanbu/pilot-connector/releases)
+[![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
+
 **官网与下载：** <https://pilot.medpilot.cc/zh.html#connector-download> —— 截图、演示视频与各平台安装包。
 
 Pilot 手机连接的云端盲中继。它只按房间转发 WebSocket 帧，不保存消息，也不持有端到端密钥。
 **Pilot 官方不提供公共中继服务**，需要跨网络使用手机连接时请自行部署。
 
 > **运营方与用户：** 只给自己拥有或已获授权的设备用。项目政策、禁止用途、
-> 滥用举报渠道（`[ABUSE]`）与运营方可用的断流开关见 [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md)。
+> 滥用举报渠道（`[ABUSE]`）与运营方可用的断流开关见 [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md)。
 
 ## 下载
 
@@ -170,7 +174,7 @@ PILOT_RELAY_URL=wss://relay.example.com/connector
 4. 保留你定位来源所必需的访问日志，但 **不要**为了排查而开始记录帧内容：
    这会让那台中继对所有其他用户失信，也会把自己变成"持有用户数据"的一方。
 5. 做不到的事：拦不住别人自己搭中继或自己编译客户端。项目的政策、举报渠道与响应承诺见
-   [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md)。
+   [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md)。
 
 ## License
 

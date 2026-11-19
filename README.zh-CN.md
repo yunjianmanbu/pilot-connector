@@ -2,14 +2,13 @@
 
 [English](README.md) | **中文**
 
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/yunjianmanbu/pilot-connector?color=blue)](https://github.com/yunjianmanbu/pilot-connector/releases)
-[![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
-
 **官网与下载：** <https://pilot.medpilot.cc/zh.html#connector-download> —— 截图、演示视频与各平台安装包。
 
 Pilot 手机连接的云端盲中继。它只按房间转发 WebSocket 帧，不保存消息，也不持有端到端密钥。
 **Pilot 官方不提供公共中继服务**，需要跨网络使用手机连接时请自行部署。
+
+> **运营方与用户：** 只给自己拥有或已获授权的设备用。项目政策、禁止用途、
+> 滥用举报渠道（`[ABUSE]`）与运营方可用的断流开关见 [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md)。
 
 ## 下载
 
@@ -56,6 +55,12 @@ PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 
 健康检查：`curl http://127.0.0.1:8789/healthz`
 
+滥用止损开关的回归（需要先 `npm install`）：
+
+```bash
+npm test    # 4 个用例：按来源 IP 连接上限 / IP 黑名单 / 握手失败不占额 / 上限关闭
+```
+
 环境变量：
 
 | 变量 | 默认值 | 说明 |
@@ -64,6 +69,8 @@ PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 | `BIND` | `127.0.0.1` | 监听地址，建议只监听回环并由 nginx 反代 |
 | `WS_PATH` | `/connector` | WebSocket 升级路径 |
 | `HOST_GRACE_MS` | `30000` | 电脑端断开后保留手机连接的宽限期 |
+| `MAX_CONNECTIONS_PER_IP` | `64` | 同一来源地址并发连接上限（`0` 关闭）。大型办公室共用同一个出口 IP 时需要调高 |
+| `RELAY_BLOCK_IPS` | 空 | 在 upgrade 阶段直接拒给的来源地址，逗号分隔 |
 
 ## 连接恢复
 
@@ -149,6 +156,21 @@ PILOT_RELAY_URL=wss://relay.example.com/connector
 - 不记录帧内容；只保留连接数等运行状态。
 - 每房间最多 4 台手机，单帧上限 1 MB，并对消息速率做限制。
 - 房间密钥由桌面端生成，经一次性二维码传递；连接器只做房间隔离。
+
+## 运营方怎么处理滥用
+
+中继看不到房间在传什么，盲转发的代价就是：**运营方的手段只能是"按来源断流"，而不是"看内容判断"**。
+
+1. 看 `/healthz`：除了 `rooms` / `hosts` / `phones`，还会报 `sources`（当前在用地址数）。
+   同一个地址占了很多房间却没有手机、或 `sources` 持续上涨而 `phones` 不动，基本就是滥用签名。
+2. `MAX_CONNECTIONS_PER_IP` 挡住单机开上千个套接字。反代后面计数取 `X-Forwarded-For` 的**最后一项**
+   （两份示例配置都已经会转发）。直连且非回环的连接按自身地址计数。
+3. 要切断某个地址：把它加进 `RELAY_BLOCK_IPS` 并重启，`/healthz` 会多报一个 `blockedSources`。
+   名单写在部署配置里，不要只存在临时 shell 变量里。
+4. 保留你定位来源所必需的访问日志，但 **不要**为了排查而开始记录帧内容：
+   这会让那台中继对所有其他用户失信，也会把自己变成"持有用户数据"的一方。
+5. 做不到的事：拦不住别人自己搭中继或自己编译客户端。项目的政策、举报渠道与响应承诺见
+   [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md)。
 
 ## License
 

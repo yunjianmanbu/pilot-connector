@@ -2,6 +2,7 @@
 
 **English** | [中文](README.zh-CN.md)
 
+[![CI](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/yunjianmanbu/pilot-connector?color=blue)](https://github.com/yunjianmanbu/pilot-connector/releases)
 [![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
@@ -12,6 +13,10 @@ A blind cloud relay for piloting your phone. It forwards WebSocket frames by roo
 stores messages and never holds the end-to-end keys.
 **There is no public relay run by the Pilot project** — to reach your phone across networks,
 deploy your own.
+
+> **Operators and users:** a relay is for your own devices, or devices you are authorized to control.
+> Project policy, prohibited uses, the abuse reporting channel (`[ABUSE]`) and the operator's
+> cut-off levers are in [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md).
 
 ## Download
 
@@ -58,6 +63,12 @@ PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 
 Health check: `curl http://127.0.0.1:8789/healthz`
 
+Regression for the abuse cut-off controls (run `npm install` first):
+
+```bash
+npm test    # 4 cases: per-source cap, IP blocklist, failed handshake, cap disabled
+```
+
 Environment variables:
 
 | Variable | Default | Description |
@@ -66,6 +77,8 @@ Environment variables:
 | `BIND` | `127.0.0.1` | Listening address; bind to loopback and let nginx proxy to it |
 | `WS_PATH` | `/connector` | WebSocket upgrade path |
 | `HOST_GRACE_MS` | `30000` | Grace period that keeps the phone connection after the desktop drops |
+| `MAX_CONNECTIONS_PER_IP` | `64` | Concurrent connections allowed from one source address (`0` disables the cap). Raise it if a large office shares one NAT |
+| `RELAY_BLOCK_IPS` | empty | Comma-separated source addresses to refuse at the upgrade stage |
 
 ## Connection recovery
 
@@ -157,6 +170,26 @@ PILOT_RELAY_URL=wss://relay.example.com/connector
 - At most 4 phones per room, 1 MB per frame, with rate limiting on messages.
 - Room keys are generated on the desktop and handed over through a one-time QR code; the connector
   only enforces room isolation.
+
+## Abuse handling for relay operators
+
+The connector cannot see what a room is transferring — that is the point of a blind relay. So
+operator-side abuse handling is deliberately **coarse**: cut the source off, never inspect the traffic.
+
+1. Watch `/healthz`: it reports `sources` (distinct addresses currently connected) next to
+   `rooms` / `hosts` / `phones`. An address holding many rooms with no phones, or a source count that
+   climbs while `phones` stays flat, is the usual signature.
+2. `MAX_CONNECTIONS_PER_IP` stops one machine from opening thousands of sockets. Behind nginx or
+   Caddy the limit counts the last `X-Forwarded-For` entry and the proxy must forward it (both sample
+   configs do). A direct, non-loopback connection is counted by its own address.
+3. To cut an address off, add it to `RELAY_BLOCK_IPS` and restart — `/healthz` then reports
+   `blockedSources`. Keep the list in your deployment config, not in an ad-hoc shell variable.
+4. Keep the access log you need to identify sources, but **do not** start logging frame payloads to
+   investigate. Doing so breaks the blind-relay promise for every other user of that relay and moves
+   you into "holding users' data" territory.
+5. What this cannot do: it cannot stop someone running their own relay or a self-compiled client.
+   The project policy, reporting channel and response commitments are in
+   [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md).
 
 ## License
 

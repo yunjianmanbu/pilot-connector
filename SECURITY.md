@@ -16,8 +16,10 @@ Pilot Connector 处在桌面端与手机端之间，所有配对帧都要经过�
 ## 怎么报
 
 - **优先**：GitHub Security Advisories 的私密报告（本仓库 Security → Report a vulnerability）
-- 备选：邮件 `embeddedmeng@163.com`，标题加 `[SECURITY]`
+- 备选：邮件 `yunjianmanbu@126.com`，标题加 `[SECURITY]`
 - 请**不要**开公开 issue、不要在公开渠道贴复现细节或利用代码
+- **滥用（不是漏洞）**：有人在用本项目（含改过的版本）控制别人设备、群控或诈骗，标题加 `[ABUSE]`，
+  政策与处置范围见 [`RESPONSIBLE_USE.md`](RESPONSIBLE_USE.md)；我们不会远程关停别人自建的中继。
 
 为了更快定位，请附上：
 

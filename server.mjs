@@ -48,7 +48,64 @@ const ROOM_RE = /^[A-Za-z0-9_-]{16,128}$/
 const KEY_RE = /^[A-Za-z0-9_-]{22,128}$/
 const ID_RE = /^[A-Za-z0-9_-]{8,80}$/
 
+// ---- Abuse containment ----
+// The connector never reads frame payloads, so an operator's only levers are
+// connection accounting and a static blocklist. That is a deliberate limit:
+// investigating what a source was transferring would break the blind-relay
+// promise for every other user. MAX_CONNECTIONS_PER_IP=0 disables the cap;
+// 64 is generous for a household or a small office behind one NAT.
+const MAX_CONNECTIONS_PER_IP = Number(process.env.MAX_CONNECTIONS_PER_IP ?? 64)
+const IP_CONNECTION_LIMIT =
+  Number.isFinite(MAX_CONNECTIONS_PER_IP) && MAX_CONNECTIONS_PER_IP > 0 ? MAX_CONNECTIONS_PER_IP : 0
+const BLOCKED_IPS = new Set(
+  String(process.env.RELAY_BLOCK_IPS || '')
+    .split(',')
+    .map((value) => normalizeIp(value.trim()))
+    .filter(Boolean)
+)
+const ipConnections = new Map()
+
 const rooms = new Map()
+
+function normalizeIp(value) {
+  const ip = String(value || '')
+  return ip.startsWith('::ffff:') ? ip.slice(7) : ip
+}
+
+function isLoopback(ip) {
+  return ip === '::1' || ip === 'localhost' || ip.startsWith('127.')
+}
+
+/**
+ * The address the connection is accounted against.
+ * Behind nginx / Caddy the socket is always the proxy, so trust the *last*
+ * X-Forwarded-For entry (the one the proxy appended) — a client-supplied
+ * header cannot move the count onto someone else. Direct (non-loopback)
+ * connections are accounted by their own address.
+ */
+function clientIp(request) {
+  const remote = normalizeIp(request.socket?.remoteAddress)
+  if (!isLoopback(remote)) return remote
+  const forwarded = String(request.headers['x-forwarded-for'] || '')
+    .split(',')
+    .map((value) => normalizeIp(value.trim()))
+    .filter(Boolean)
+  return forwarded.length ? forwarded[forwarded.length - 1] : remote
+}
+
+function takeIpSlot(ip) {
+  const used = ipConnections.get(ip) || 0
+  if (IP_CONNECTION_LIMIT && used >= IP_CONNECTION_LIMIT) return false
+  ipConnections.set(ip, used + 1)
+  return true
+}
+
+function releaseIpSlot(ip) {
+  if (!ip) return
+  const used = (ipConnections.get(ip) || 0) - 1
+  if (used > 0) ipConnections.set(ip, used)
+  else ipConnections.delete(ip)
+}
 
 function json(response, status, body) {
   const text = JSON.stringify(body)
@@ -399,7 +456,15 @@ const server = createServer((request, response) => {
       if (room.host) hosts += 1
       phones += room.phones.size
     }
-    json(response, 200, { ok: true, app: 'pilot-connector', rooms: rooms.size, hosts, phones })
+    json(response, 200, {
+      ok: true,
+      app: 'pilot-connector',
+      rooms: rooms.size,
+      hosts,
+      phones,
+      sources: ipConnections.size,
+      blockedSources: BLOCKED_IPS.size,
+    })
     return
   }
   response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
@@ -425,7 +490,28 @@ server.on('upgrade', (request, socket, head) => {
     socket.destroy()
     return
   }
+  const ip = clientIp(request)
+  if (BLOCKED_IPS.has(ip)) {
+    socket.destroy()
+    return
+  }
+  // handleUpgrade invokes its callback synchronously, so the slot checked here
+  // is taken before the next upgrade event is processed.
+  if (!takeIpSlot(ip)) {
+    socket.destroy()
+    return
+  }
+  // A handshake ws rejects (missing Sec-WebSocket-Key, wrong version, ...) is
+  // aborted by destroying the raw socket, and no WebSocket is ever created, so
+  // the 'close' handler below never runs. Without this the slot would leak on
+  // every malformed upgrade and eventually lock the source out for good.
+  let upgraded = false
+  socket.once('close', () => {
+    if (!upgraded) releaseIpSlot(ip)
+  })
   wss.handleUpgrade(request, socket, head, (ws) => {
+    upgraded = true
+    ws.clientIp = ip
     wss.emit('connection', ws, request)
   })
 })
@@ -448,6 +534,7 @@ wss.on('connection', (socket) => {
     }
   })
   socket.on('close', () => {
+    releaseIpSlot(socket.clientIp)
     try {
       handleClose(socket)
     } catch {

@@ -154,5 +154,5 @@ PILOT_RELAY_URL=wss://relay.example.com/connector
 
 ## License
 
-[Apache License 2.0](../LICENSE). Self-hosting or commercially hosting a relay needs no extra
-permission and no publication of your modified source — keep [`NOTICE`](../NOTICE) and you are done.
+[Apache License 2.0](LICENSE). Self-hosting or commercially hosting a relay needs no extra
+permission and no publication of your modified source — keep [`NOTICE`](NOTICE) and you are done.

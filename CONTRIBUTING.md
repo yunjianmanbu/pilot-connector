@@ -74,8 +74,8 @@ PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 
 ## 行为准则
 
-参与即表示同意 [`CODE_OF_CONDUCT.md`](../community/CODE_OF_CONDUCT.md)。
+参与即表示同意 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)。
 
 ## 许可
 
-提交的代码默认以 [Apache License 2.0](../LICENSE) 授权，保留 [`NOTICE`](../NOTICE) 中的版权与商标声明。
+提交的代码默认以 [Apache License 2.0](LICENSE) 授权，保留 [`NOTICE`](NOTICE) 中的版权与商标声明。

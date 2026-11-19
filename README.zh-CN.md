@@ -146,5 +146,5 @@ PILOT_RELAY_URL=wss://relay.example.com/connector
 
 ## License
 
-[Apache License 2.0](../LICENSE)。自建或对外提供中继服务无需额外授权，也无需公开改造后的
-源码，保留 [`NOTICE`](../NOTICE) 即可。
+[Apache License 2.0](LICENSE)。自建或对外提供中继服务无需额外授权，也无需公开改造后的
+源码，保留 [`NOTICE`](NOTICE) 即可。

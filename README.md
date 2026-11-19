@@ -6,6 +6,8 @@
 [![Release](https://img.shields.io/github/v/release/yunjianmanbu/pilot-connector?color=blue)](https://github.com/yunjianmanbu/pilot-connector/releases)
 [![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
 
+**Website & installers:** <https://pilot.medpilot.cc/#connector-download> — screenshots, demo video and every download.
+
 A blind cloud relay for piloting your phone. It forwards WebSocket frames by room only — it never
 stores messages and never holds the end-to-end keys.
 **There is no public relay run by the Pilot project** — to reach your phone across networks,

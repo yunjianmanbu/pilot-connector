@@ -16,11 +16,12 @@ Pilot 手机连接的云端盲中继。它只按房间转发 WebSocket 帧，不
 
 ## 下载
 
-- Linux：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.1-linux.tar.gz>
-- Windows：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.1-windows.zip>
+- Linux：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz>
+- Windows：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-windows.zip>
 - 一键安装脚本：<https://download.medpilot.cc/pilot/connector/install.sh>
 
-两个包都包含 `server.mjs`、`ws` 依赖、systemd / nginx 示例；需要 Node.js >= 22.12。
+两个包都包含 `server.mjs`、`ws` 依赖、systemd / nginx 示例，以及文档里引用的 `LICENSE` /
+`NOTICE` / `RESPONSIBLE_USE.md`；需要 Node.js >= 22.12。
 安装包旁提供同名 `.sha256`，下载后可自行校验。
 
 ## 云服务器一键安装（Ubuntu / Debian）

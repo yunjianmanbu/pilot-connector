@@ -19,11 +19,12 @@ deploy your own.
 
 ## Download
 
-- Linux: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.1-linux.tar.gz>
-- Windows: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.1-windows.zip>
+- Linux: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz>
+- Windows: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-windows.zip>
 - One-line installer: <https://download.medpilot.cc/pilot/connector/install.sh>
 
-Both packages ship `server.mjs`, the `ws` dependency and systemd / nginx samples; Node.js >= 22.12
+Both packages ship `server.mjs`, the `ws` dependency, systemd / nginx samples and the `LICENSE` /
+`NOTICE` / `RESPONSIBLE_USE.md` the docs link to; Node.js >= 22.12
 is required. Each archive has a matching `.sha256` file so you can verify it after downloading.
 
 ## One-line install on a cloud box (Ubuntu / Debian)

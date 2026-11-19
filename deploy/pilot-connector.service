@@ -1,0 +1,33 @@
+[Unit]
+Description=Pilot Link cloud connector
+Documentation=https://pilot.medpilot.cc/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www
+Group=www
+WorkingDirectory=/opt/pilot-connector
+Environment=NODE_ENV=production
+Environment=PORT=8789
+Environment=BIND=127.0.0.1
+Environment=WS_PATH=/connector
+ExecStart=/usr/local/bin/node /opt/pilot-connector/server.mjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/pilot-connector
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+{
+  "name": "pilot-connector",
+  "version": "0.2.1",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "Pilot Link blind WebSocket connector",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.22.2"
+  }
+}

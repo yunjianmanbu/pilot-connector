@@ -1,0 +1,502 @@
+#!/usr/bin/env node
+import { createServer } from 'node:http'
+import { randomUUID } from 'node:crypto'
+import { WebSocketServer, WebSocket } from 'ws'
+
+/**
+ * Pilot cloud connector.
+ *
+ * A blind WebSocket relay for Pilot Link. The desktop opens an outbound host
+ * channel to a room; a phone joins the same room. The relay only forwards
+ * opaque frames, keeps no conversation data, and never receives E2E keys.
+ *
+ * Protocol (all frames are JSON):
+ *   client -> relay.hello   { role: 'host'|'phone', room, key, protocol }
+ *   relay  -> relay.ready   { role, protocol }
+ *   phone  -> relay.frame   { data: <opaque frame> }
+ *   relay  -> host          { type:'relay.frame', cid, data }
+ *   host   -> relay.send    { cid, data }
+ *   relay  -> phone         <data verbatim>
+ *   host   -> relay.close   { cid, code, reason }
+ *   relay  -> host          { type:'relay.peer-open'|'relay.peer-close', cid }
+ *   relay  -> client        { type:'relay.error', message, fatal? }
+ */
+
+const PORT = Number(process.env.PORT || 8787)
+const BIND = process.env.BIND || '127.0.0.1'
+const WS_PATH = process.env.WS_PATH || '/connector'
+const MAX_ROOMS = Number(process.env.MAX_ROOMS || 10_000)
+const MAX_PHONES_PER_ROOM = 4
+const MAX_FRAME_BYTES = 1024 * 1024
+const MAX_MESSAGES_PER_MINUTE = 900
+const PENDING_PHONE_MS = 90_000
+// A desktop relay socket can drop for a second or two without the desktop
+// itself going away. Keep phone sockets alive for a short grace period so a
+// transient host reconnect does not show up as "电脑已离线" on every phone.
+const HOST_GRACE_CONFIG = Number(process.env.HOST_GRACE_MS)
+const HOST_GRACE_MS =
+  Number.isFinite(HOST_GRACE_CONFIG) && HOST_GRACE_CONFIG >= 0 ? HOST_GRACE_CONFIG : 30_000
+// While the host is away, buffer only control frames (hello / proof /
+// pair.join). Business frames are dropped so a request cannot execute after
+// the phone has already timed out and shown an error to the user.
+const MAX_PENDING_FRAMES = 32
+const HEARTBEAT_MS = 25_000
+// Mobile links regularly miss a single pong. Terminating on the first miss
+// looks like a random disconnect on the phone; tolerate a few in a row.
+const HEARTBEAT_MISS_LIMIT = 3
+const ROOM_RE = /^[A-Za-z0-9_-]{16,128}$/
+const KEY_RE = /^[A-Za-z0-9_-]{22,128}$/
+const ID_RE = /^[A-Za-z0-9_-]{8,80}$/
+
+const rooms = new Map()
+
+function json(response, status, body) {
+  const text = JSON.stringify(body)
+  response.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(text),
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+  })
+  response.end(text)
+}
+
+function send(socket, frame) {
+  if (socket.readyState !== WebSocket.OPEN) return false
+  try {
+    socket.send(JSON.stringify(frame))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function sendRaw(socket, text) {
+  if (socket.readyState !== WebSocket.OPEN) return false
+  try {
+    socket.send(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function closeSocket(socket, code, reason) {
+  try {
+    socket.close(code, String(reason || '').slice(0, 120))
+  } catch {
+    try {
+      socket.terminate()
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function reject(socket, message, fatal = true) {
+  send(socket, { type: 'relay.error', message: String(message).slice(0, 200), fatal })
+  closeSocket(socket, 4009, message)
+}
+
+function createRoom(roomId, key) {
+  if (rooms.size >= MAX_ROOMS) return null
+  const room = {
+    id: roomId,
+    key,
+    host: null,
+    // Identifies one desktop process across relay-socket reconnects. A new
+    // value means the desktop restarted, so phones must re-authenticate.
+    hostInstance: '',
+    hostGraceTimer: null,
+    pending: [],
+    phones: new Map(),
+    createdAt: Date.now(),
+  }
+  rooms.set(roomId, room)
+  return room
+}
+
+function clearHostGrace(room) {
+  if (room.hostGraceTimer) clearTimeout(room.hostGraceTimer)
+  room.hostGraceTimer = null
+}
+
+function deleteRoomIfEmpty(room) {
+  if (!room.host && room.phones.size === 0 && rooms.get(room.id) === room) {
+    clearHostGrace(room)
+    room.pending = []
+    rooms.delete(room.id)
+  }
+}
+
+function resetPhones(room, message) {
+  const text = String(message || '电脑已重新连接，请稍后重试').slice(0, 120)
+  for (const phone of room.phones.values()) {
+    clearTimeout(phone.pendingTimer)
+    send(phone.socket, { type: 'relay.error', message: text })
+    closeSocket(phone.socket, 4001, text)
+  }
+  room.phones.clear()
+  room.pending = []
+}
+
+function flushPending(room) {
+  if (!room.host) return
+  const pending = room.pending
+  room.pending = []
+  for (const item of pending) {
+    if (!room.phones.has(item.cid)) continue
+    send(room.host, { type: 'relay.frame', cid: item.cid, data: item.data })
+  }
+}
+
+function hostPeerOpen(room, phone) {
+  if (!room.host) return
+  send(room.host, { type: 'relay.peer-open', cid: phone.cid })
+}
+
+function hostPeerClose(room, phone) {
+  if (!room.host) return
+  send(room.host, { type: 'relay.peer-close', cid: phone.cid })
+}
+
+function attachPhone(room, socket) {
+  if (room.phones.size >= MAX_PHONES_PER_ROOM) {
+    reject(socket, '这个配对已有太多连接，请稍后重试')
+    return null
+  }
+  const phone = {
+    cid: randomUUID(),
+    socket,
+    pendingTimer: null,
+  }
+  phone.pendingTimer = setTimeout(() => {
+    if (!room.host) {
+      send(socket, { type: 'relay.error', message: '电脑当前离线，请确认 Pilot 已开启' })
+      closeSocket(socket, 4001, 'host offline')
+    }
+  }, PENDING_PHONE_MS)
+  room.phones.set(phone.cid, phone)
+  socket.cid = phone.cid
+  socket.room = room
+  socket.role = 'phone'
+  send(socket, { type: 'relay.ready', role: 'phone', protocol: 1 })
+  hostPeerOpen(room, phone)
+  return phone
+}
+
+function attachHost(room, socket, hostInstance) {
+  const previous = room.host
+  const sameDesktop = Boolean(hostInstance) && hostInstance === room.hostInstance
+  const hadPhones = room.phones.size > 0
+  clearHostGrace(room)
+  if (previous && previous !== socket) {
+    // A reconnecting desktop replaces its old half-dead socket. The old close
+    // handler checks room.host before touching room state.
+    room.host = socket
+    send(previous, { type: 'relay.error', message: '连接器已建立新的主机通道', fatal: true })
+    closeSocket(previous, 4001, 'replaced')
+  } else {
+    room.host = socket
+  }
+  room.hostInstance = hostInstance
+  socket.room = room
+  socket.role = 'host'
+  send(socket, { type: 'relay.ready', role: 'host', protocol: 1 })
+  if (!hadPhones) return
+  if (!sameDesktop) {
+    // The desktop process restarted. Phone sockets point at the old process
+    // state, so ask them to reconnect and authenticate against the new one.
+    resetPhones(room, '电脑已重新连接，请稍后重试')
+    return
+  }
+  flushPending(room)
+  for (const phone of room.phones.values()) hostPeerOpen(room, phone)
+}
+
+function handleHello(socket, frame) {
+  const role = frame.role
+  const roomId = frame.room
+  const key = frame.key
+  if (role !== 'host' && role !== 'phone') {
+    reject(socket, '连接器身份不正确')
+    return
+  }
+  if (typeof roomId !== 'string' || !ROOM_RE.test(roomId)) {
+    reject(socket, '连接器房间标识不正确')
+    return
+  }
+  if (typeof key !== 'string' || !KEY_RE.test(key)) {
+    reject(socket, '连接器房间密钥不正确')
+    return
+  }
+  let room = rooms.get(roomId)
+  if (room && room.key !== key) {
+    reject(socket, '连接器房间密钥不匹配')
+    return
+  }
+  if (!room) {
+    room = createRoom(roomId, key)
+    if (!room) {
+      reject(socket, '连接器繁忙，请稍后重试')
+      return
+    }
+  }
+  socket.authed = true
+  if (role === 'host') {
+    const instance =
+      typeof frame.hostInstance === 'string' && ID_RE.test(frame.hostInstance)
+        ? frame.hostInstance
+        : ''
+    attachHost(room, socket, instance)
+  } else {
+    const phone = attachPhone(room, socket)
+    if (phone) {
+      socket.phone = phone
+    }
+  }
+}
+
+function handlePhoneFrame(socket, frame) {
+  const room = socket.room
+  if (!room || socket.role !== 'phone') return
+  const data = frame.data
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return
+  if (!room.host) {
+    // Keep the phone link alive while the host reconnects. The phone's own
+    // app-level ping is answered here; the relay only echoes liveness, never
+    // business data.
+    if (data.type === 'ping') {
+      send(socket, { type: 'pong', t: Date.now() })
+      return
+    }
+    if (
+      (data.type === 'hello' || data.type === 'hello.proof' || data.type === 'pair.join') &&
+      room.pending.length < MAX_PENDING_FRAMES
+    ) {
+      room.pending.push({ cid: socket.cid, data, at: Date.now() })
+    }
+    return
+  }
+  send(room.host, { type: 'relay.frame', cid: socket.cid, data })
+}
+
+function handleHostFrame(socket, frame) {
+  const room = socket.room
+  if (!room || socket.role !== 'host' || room.host !== socket) return
+  const cid = frame.cid
+  if (typeof cid !== 'string' || !ID_RE.test(cid)) return
+  const phone = room.phones.get(cid)
+  if (!phone) return
+  if (frame.type === 'relay.send') {
+    const data = frame.data
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return
+    let text
+    try {
+      text = JSON.stringify(data)
+    } catch {
+      return
+    }
+    if (Buffer.byteLength(text) > MAX_FRAME_BYTES) return
+    sendRaw(phone.socket, text)
+    return
+  }
+  if (frame.type === 'relay.close') {
+    const code = Number.isSafeInteger(frame.code) ? Math.min(4999, Math.max(1000, frame.code)) : 1000
+    closeSocket(phone.socket, code, frame.reason || 'closed by host')
+  }
+}
+
+function handleMessage(socket, raw) {
+  if (socket.rateStart === undefined || Date.now() - socket.rateStart > 60_000) {
+    socket.rateStart = Date.now()
+    socket.rateCount = 0
+  }
+  socket.rateCount += 1
+  if (socket.rateCount > MAX_MESSAGES_PER_MINUTE) {
+    closeSocket(socket, 4008, 'rate limit')
+    return
+  }
+  let frame
+  try {
+    frame = JSON.parse(raw.toString('utf8'))
+  } catch {
+    reject(socket, '消息格式不正确')
+    return
+  }
+  if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
+    reject(socket, '消息格式不正确')
+    return
+  }
+  if (!socket.authed) {
+    if (frame.type !== 'relay.hello') {
+      reject(socket, '请先完成连接器握手')
+      return
+    }
+    socket.helloAttempts = (socket.helloAttempts || 0) + 1
+    if (socket.helloAttempts > 6) {
+      reject(socket, '握手次数过多')
+      return
+    }
+    handleHello(socket, frame)
+    return
+  }
+  if (socket.role === 'phone') {
+    if (frame.type === 'relay.frame') handlePhoneFrame(socket, frame)
+    return
+  }
+  if (socket.role === 'host') {
+    if (frame.type === 'relay.send' || frame.type === 'relay.close') {
+      handleHostFrame(socket, frame)
+    }
+  }
+}
+
+function handleClose(socket) {
+  socket.authed = false
+  const room = socket.room
+  if (!room) return
+  if (socket.role === 'host') {
+    if (room.host !== socket) return
+    room.host = null
+    if (room.phones.size === 0) {
+      room.pending = []
+      deleteRoomIfEmpty(room)
+      return
+    }
+    clearHostGrace(room)
+    room.hostGraceTimer = setTimeout(() => {
+      room.hostGraceTimer = null
+      if (room.host || rooms.get(room.id) !== room) return
+      resetPhones(room, '电脑已离线，稍后会自动重连')
+      deleteRoomIfEmpty(room)
+    }, HOST_GRACE_MS)
+    room.hostGraceTimer.unref?.()
+  } else if (socket.role === 'phone') {
+    const phone = socket.phone
+    if (phone && room.phones.get(phone.cid) === phone) {
+      clearTimeout(phone.pendingTimer)
+      room.phones.delete(phone.cid)
+      hostPeerClose(room, phone)
+    }
+  }
+  deleteRoomIfEmpty(room)
+}
+
+const server = createServer((request, response) => {
+  let pathname = '/'
+  try {
+    pathname = new URL(request.url || '/', 'http://pilot.local').pathname
+  } catch {
+    response.writeHead(400)
+    response.end()
+    return
+  }
+  if (request.method === 'GET' && pathname === '/healthz') {
+    let hosts = 0
+    let phones = 0
+    for (const room of rooms.values()) {
+      if (room.host) hosts += 1
+      phones += room.phones.size
+    }
+    json(response, 200, { ok: true, app: 'pilot-connector', rooms: rooms.size, hosts, phones })
+    return
+  }
+  response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
+  response.end('Not found')
+})
+
+const wss = new WebSocketServer({
+  noServer: true,
+  maxPayload: MAX_FRAME_BYTES,
+  perMessageDeflate: false,
+  clientTracking: true,
+})
+
+server.on('upgrade', (request, socket, head) => {
+  let pathname = ''
+  try {
+    pathname = new URL(request.url || '/', 'http://pilot.local').pathname
+  } catch {
+    socket.destroy()
+    return
+  }
+  if (pathname !== WS_PATH) {
+    socket.destroy()
+    return
+  }
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request)
+  })
+})
+
+wss.on('connection', (socket) => {
+  socket.isAlive = true
+  socket.missedHeartbeats = 0
+  socket.authed = false
+  socket.on('pong', () => {
+    socket.isAlive = true
+    socket.missedHeartbeats = 0
+  })
+  socket.on('message', (raw) => {
+    socket.isAlive = true
+    socket.missedHeartbeats = 0
+    try {
+      handleMessage(socket, raw)
+    } catch {
+      reject(socket, '连接器处理消息失败')
+    }
+  })
+  socket.on('close', () => {
+    try {
+      handleClose(socket)
+    } catch {
+      // never let cleanup take down the process
+    }
+  })
+  socket.on('error', () => {
+    // close follows
+  })
+})
+
+const heartbeat = setInterval(() => {
+  for (const socket of wss.clients) {
+    if (socket.isAlive) {
+      socket.missedHeartbeats = 0
+    } else {
+      socket.missedHeartbeats = (socket.missedHeartbeats || 0) + 1
+    }
+    if (socket.missedHeartbeats >= HEARTBEAT_MISS_LIMIT) {
+      socket.terminate()
+      continue
+    }
+    socket.isAlive = false
+    try {
+      socket.ping()
+    } catch {
+      // ignore
+    }
+  }
+}, HEARTBEAT_MS)
+heartbeat.unref?.()
+
+function shutdown(signal) {
+  console.log(`pilot-connector shutting down (${signal})`)
+  clearInterval(heartbeat)
+  for (const socket of wss.clients) {
+    try {
+      socket.close(1001, 'server shutting down')
+    } catch {
+      // ignore
+    }
+  }
+  server.close(() => process.exit(0))
+  setTimeout(() => process.exit(0), 3_000).unref()
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+
+server.listen(PORT, BIND, () => {
+  console.log(`pilot-connector listening on ${BIND}:${PORT}${WS_PATH}`)
+})

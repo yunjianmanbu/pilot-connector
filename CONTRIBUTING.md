@@ -1,86 +1,72 @@
 # 贡献指南
 
-感谢你愿意改 Pilot。这个项目会真的在本机执行命令、读写文件、连手机，
-所以我们对「改动是否可复核」的要求比普通前端项目更严：**每个 PR 都要带一条能复现的验证命令和它的输出。**
+感谢你愿意改 Pilot Connector。它处在你和别人的配对会话之间，任何改动都可能让本该端到端
+加密的流量出现新的信任边界，所以我们对「改动是否可复核」的要求比普通 Node 服务更严：
+**每个 PR 都要带一条能复现的验证命令和它的输出。**
 
-## 仓库结构
+## 这个仓库是什么
 
-Pilot 由 4 个开源子项目组成，各自是一个仓库：
+Pilot Connector 是 Pilot 手机连接的云端盲中继：桌面端与手机各自连到同一个房间，中继只按房间
+转发 WebSocket 帧，不落盘、不解析内容、不持有端到端密钥。它不提供公共实例，
+**要跨网络用手机连接，请自行部署一份**（见 [`README.md`](README.md)）。
 
-| 仓库 | 内容 | 主要语言 |
-| --- | --- | --- |
-| `client` | Electron 桌面客户端（主进程 / 渲染进程 / 内置 CLI / CLI 的 Web 控制台） | TypeScript、React |
-| `app` | Pilot Link 手机端（uni-app）+ Android 壳原生工程 | Vue 3、Java |
-| `mobile-client` | Pilot Client 手机反控端（uni-app） | Vue 3 |
-| `relay` | 中继连接器（WebSocket 盲转发） | Node.js |
-
-`site`（官网与下载清单）不开源，也不单独建仓库；`scripts`（构建 / 打包 / 发布 / 校验工具）、
-`docs`（专题文档）、`examples`（插件示例）不单独建仓库，但随官网发布的源码包一起分发。
-各开源仓库里的 `scripts/` 是从工作区复制进去的副本。
+同项目的其他组件（桌面客户端、Android 被控端、手机反控端）各自是独立仓库，
+不在本仓库的 issue 里处理。
 
 ## 开发环境
 
-- Node.js **20 或更高**（开发机验证用 22），包管理器：`client` 用 pnpm，其余用 npm
-- Windows 上的原生打包额外需要 PowerShell 7、JDK 17、Android SDK（见 `app/README.md`）
+- Node.js **22.12 或更高**（`package.json` 的 `engines` 字段）
+- 只有一个运行时依赖 `ws`，其余用 Node 内置模块
+- Windows / Linux / macOS 都能跑；部署脚本分别覆盖 systemd 与 PowerShell
 
 ```bash
-cd client && pnpm install && pnpm dev      # 桌面端开发
-cd app    && npm install && npm test       # 手机端单测
-cd mobile-client && npm install && npm test
+npm install          # 装依赖（含 devDependencies 之外的 ws）
+npm start            # node server.mjs，默认 127.0.0.1:8787
+curl http://127.0.0.1:8787/healthz     # 健康检查
+```
+
+带自定义端口与路径：
+
+```bash
+PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 ```
 
 ## 提交前必须自测
 
-| 仓库 | 命令 |
-| --- | --- |
-| `client` | `pnpm typecheck && pnpm test` |
-| `app` | `npm test` |
-| `mobile-client` | `npm test` |
-| `relay` | 见 `relay/README.md` 的部署验证一节 |
+本仓库没有自动化测试套件，验证方式是「起一个中继，用两个 WebSocket 客户端跑通房间流程」：
 
-改到跨仓库共享脚本（`scripts/`）时，受影响的两个仓库都要跑一遍。
+1. `npm start` 起中继，确认 `curl http://127.0.0.1:8787/healthz` 返回正常；
+2. 用两个客户端分别以 host / phone 身份连到同一房间，互发一帧并确认另一侧收到；
+3. 断开 host，确认手机连接仍在宽限期内保留（默认 30 秒），host 重连后帧继续可达；
+4. 把上面三步的实际命令与输出贴进 PR 描述。
+
+改动涉及安装脚本（`install.sh` / `install.ps1`）时，请在干净的容器或虚拟机里从零跑一遍，
+并把脚本输出贴出来。
 
 ## 代码约定
 
 1. **提交信息**：`type(scope): 摘要`，type 用 `feat` / `fix` / `docs` / `refactor` / `test` / `chore` / `perf`。
    摘要写「做了什么」，不要写「修改了文件」。
 2. **一次提交一件事**：顺手重构请单独成 commit，方便回退。
-3. **不加新依赖**：除非在 PR 描述里说明为什么现有依赖做不到，并确认新依赖是 MIT / Apache-2.0 / BSD 这类宽松协议。
-   Pilot 不接受 GPL / AGPL 依赖。
-4. **不提交**：视频（`.mp4` / `.webm`）、签名证书（`.jks` / `.keystore`）、任何密码文件、`.env`、
-   `node_modules/`、构建产物。这些都在 `.gitignore` 里，别用 `git add -f` 绕过去。
-5. **路径不写死**：文档和脚本里不要出现个人机器路径（`C:\Users\你的名字\...`）。
+3. **不加新依赖**：除非在 PR 描述里说明为什么 `ws` 与内置模块做不到，并确认新依赖是
+   MIT / Apache-2.0 / BSD 这类宽松协议。本项目不接受 GPL / AGPL 依赖。
+4. **不记录内容**：中继不得新增任何会落盘或打印帧载荷、配对凭据、会话密钥的逻辑，
+   日志只写连接数、房间数、错误码这类运行状态。
+5. **不提交**：签名证书（`.jks` / `.keystore`）、任何密码文件、`.env`、`node_modules/`、
+   构建产物、视频。这些都在 `.gitignore` 里，别用 `git add -f` 绕过去。
+6. **路径不写死**：文档和脚本里不要出现个人机器路径（`C:\Users\你的名字\...`）。
    用 `%USERPROFILE%`、`$HOME`、`<你的工作区>` 或脚本自身位置推导。
-6. **一次性脚本放 `tmp/` 或直接删掉**；验证过两次以上的检查、构建、发布动作要收敛成
-   `scripts/` 下的脚本，并在头部写清「在仓库根目录一条命令跑通」的用法与退出码约定。
-
-## 桌面端的额外约束
-
-- 空 assistant 消息必须用 `agent/message-guard.ts` 的 `isEmptyAssistant` 过滤（发送前、回放前、落库前），
-  否则部分模型会从 200 变成 400。
-- 日志字段名含 `token` / `message` / `content` / `prompt` 会被整体脱敏，
-  用量请写成 `input` / `output` / `cacheHit`。
-- 权限模式、OS 沙箱、审批卡是安全边界，不接受「为方便而放宽默认值」的改动。
+7. **部署示例保持可复制**：`deploy/` 下的 systemd / nginx 片段要能直接套到一台空机器上，
+   改端口或路径时同步改 `README.md` 里对应的说明。
 
 ## Pull Request 清单
 
 - [ ] 说明改了什么、为什么改（贴现象或 issue 链接）
-- [ ] 贴出本地验证命令与输出
-- [ ] UI 改动附截图；手机端改动说明测试机型与 Android 版本
+- [ ] 贴出本地验证命令与输出（见上一节）
+- [ ] 涉及协议字段（`hello` / `pair.join` / 房间隔离）时，说明对旧版本客户端的影响
 - [ ] 没有夹带无关文件（`git diff --stat` 自查）
 - [ ] 没有新增个人机器路径、密钥、媒体文件
-- [ ] 文档同步更新（改了行为就改对应的 README 或 `docs/`）
-
-## 谁能推 `main`
-
-`main` 由 ruleset `protect-main` 保护：
-
-- 维护者账号（`@yunjianmanbu`、`@embeddedmeng`、`@rigongyizu`）可以直接推送；
-- 其他人一律 fork → PR，PR 必须拿到 1 个 CODEOWNERS（`@yunjianmanbu`）审批才能合入；
-- 禁止强推（`non_fast_forward`）和删除 `main`。
-
-所以外部贡献者不需要申请写权限，直接开 PR 即可；只有维护者会把你的分支 rebase 或 squash。
-这条策略由 `scripts/setup-github-repos.mjs --protect-only` 维护，改名单请改脚本里的 `PUSHERS` 后重跑。
+- [ ] 文档同步更新（改了行为就改 `README.md`）
 
 ## 报告安全问题
 

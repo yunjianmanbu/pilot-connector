@@ -2,6 +2,10 @@
 
 **English** | [中文](README.zh-CN.md)
 
+[![CI](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
+
 A blind cloud relay for piloting your phone. It forwards WebSocket frames by room only — it never
 stores messages and never holds the end-to-end keys.
 **There is no public relay run by the Pilot project** — to reach your phone across networks,

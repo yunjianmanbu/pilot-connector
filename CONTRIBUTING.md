@@ -68,6 +68,16 @@ PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 - [ ] 没有新增个人机器路径、密钥、媒体文件
 - [ ] 文档同步更新（改了行为就改 `README.md`）
 
+## 谁能推 `main`
+
+`main` 由 ruleset `protect-main` 保护：
+
+- 维护者账号（`@yunjianmanbu`、`@embeddedmeng`、`@rigongyizu`）可以直接推送；
+- 其他人一律 fork → PR，PR 必须拿到 1 个 CODEOWNERS（`@yunjianmanbu`）审批才能合入；
+- 禁止强推（`non_fast_forward`）和删除 `main`。
+
+所以外部贡献者不需要申请写权限，直接开 PR 即可；只有维护者会把你的分支 rebase 或 squash。
+
 ## 报告安全问题
 
 不要开公开 issue，走 [`SECURITY.md`](SECURITY.md) 里的私下渠道。

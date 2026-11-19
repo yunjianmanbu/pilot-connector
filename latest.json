@@ -1,19 +1,19 @@
 {
   "name": "Pilot Connector",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "channel": "stable",
   "requires": "Node.js >= 22.12",
-  "date": "2026-11-11",
+  "date": "2026-11-19",
   "installScript": "https://download.medpilot.cc/pilot/connector/install.sh",
   "linux": {
-    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.1-linux.tar.gz",
-    "size": 48141,
-    "sha256": "4f667bbaafa7306f9fd1a9df58e0dbbad39213bd71f4ea5153dccad32fad033d"
+    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz",
+    "size": 62884,
+    "sha256": "5c83e140fbe396893706bffab17de4bcb0072ce86a826f0f5efe3ca506ffdbe2"
   },
   "windows": {
-    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.1-windows.zip",
-    "size": 57310,
-    "sha256": "e818715648df003f1494979999dd1830160d5f97674620cc87feed54b1c4fd33"
+    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-windows.zip",
+    "size": 75618,
+    "sha256": "8ad4a4a758b7fc46a44402210249ab0d152f950e61269d3bf91694197c19e6e0"
   },
-  "notes": "中继器新增电脑端连接宽限：电脑端的 WebSocket 短暂断开时保留手机连接 30 秒，期间代答心跳并缓冲握手帧；电脑重启后自动让手机重新配对。手机客户端同步加快断线检测与重连。"
+  "notes": "中继器新增按来源的连接上限与断流开关：同一个 IP 的并发连接默认最多 64 条（MAX_CONNECTIONS_PER_IP，设为 0 关闭此限制），超出即拒绝；写进 RELAY_BLOCK_IPS 的来源在握手阶段直接断开。服务端 /healthz 增加 sources 与 blockedSources 两个计数，方便运营方发现异常来源并整段切断。转发逻辑、盲中继承诺与协议都没有变化。"
 }

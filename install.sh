@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-VERSION="${PILOT_CONNECTOR_VERSION:-0.2.1}"
+VERSION="${PILOT_CONNECTOR_VERSION:-0.2.2}"
 BASE_URL="${PILOT_CONNECTOR_BASE_URL:-https://download.medpilot.cc/pilot/connector}"
 NODE_VERSION="${NODE_VERSION:-22.12.0}"
 NODE_MIRROR="${NODE_MIRROR:-https://nodejs.org/dist}"
@@ -32,7 +32,7 @@ usage() {
   --port <端口>     中继器监听端口（默认 8789）
   --bind <地址>     监听地址（默认 127.0.0.1，建议只监听回环）
   --dir <目录>      安装目录（默认 /opt/pilot-connector）
-  --version <版本>  中继器版本（默认 0.2.1）
+  --version <版本>  中继器版本（默认 0.2.2）
   --no-nginx        即使提供域名，也不自动配置 nginx
   -h, --help        显示帮助
 

@@ -1,5 +1,5 @@
 // 中继的滥用止损开关：按来源 IP 的连接上限、IP 黑名单、/healthz 计数。
-// 跑法：cd pilot/relay && npm test
+// 跑法：cd pilot/pilot-connector && npm test
 // 这三个用例是 RESPONSIBLE_USE.md「技术护栏」表里运营方可操作的部分，改动 server.mjs
 // 的 upgrade 处理时要让它们继续通过。
 import { test } from 'node:test'

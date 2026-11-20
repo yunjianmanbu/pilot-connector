@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, WebSocket } from 'ws'
 
 /**
@@ -10,8 +10,14 @@ import { WebSocketServer, WebSocket } from 'ws'
  * channel to a room; a phone joins the same room. The relay only forwards
  * opaque frames, keeps no conversation data, and never receives E2E keys.
  *
+ * Two independent gates stand in front of that: a secret WebSocket path
+ * (`WS_PATH`, unguessable instead of the default `/connector`) and an optional
+ * admission code (`RELAY_ACCESS_KEYS` / `RELAY_ACCESS_STRICT`) carried as
+ * `access` on relay.hello. The code never reaches the E2E layer, is not a
+ * per-room secret, and is checked before any room is created.
+ *
  * Protocol (all frames are JSON):
- *   client -> relay.hello   { role: 'host'|'phone', room, key, protocol }
+ *   client -> relay.hello   { role: 'host'|'phone', room, key, protocol, access? }
  *   relay  -> relay.ready   { role, protocol }
  *   phone  -> relay.frame   { data: <opaque frame> }
  *   relay  -> host          { type:'relay.frame', cid, data }
@@ -47,6 +53,9 @@ const HEARTBEAT_MISS_LIMIT = 3
 const ROOM_RE = /^[A-Za-z0-9_-]{16,128}$/
 const KEY_RE = /^[A-Za-z0-9_-]{22,128}$/
 const ID_RE = /^[A-Za-z0-9_-]{8,80}$/
+// `id:secret`. The id names a device or a household so one code can be revoked
+// without touching the others; the secret is the part that matters.
+const ACCESS_KEY_RE = /^([A-Za-z0-9_-]{1,32}):([A-Za-z0-9_-]{16,128})$/
 
 // ---- Abuse containment ----
 // The connector never reads frame payloads, so an operator's only levers are
@@ -65,7 +74,47 @@ const BLOCKED_IPS = new Set(
 )
 const ipConnections = new Map()
 
+// ---- L1 admission ----
+// Deliberately weak and deliberately simple: one shared code per device group,
+// no accounts, no enrolment. It keeps a leaked URL from turning the relay into
+// free bandwidth. It does NOT protect message contents (E2E does) and it does
+// not survive someone handing over the full connection string.
+const ACCESS_KEYS = new Map()
+const ACCESS_STRICT = parseFlag(process.env.RELAY_ACCESS_STRICT)
+const accessStats = { anonymous: 0, rejected: 0 }
+const ANONYMOUS_LOG_INTERVAL_MS = 60_000
+let lastAnonymousLogAt = 0
+
 const rooms = new Map()
+
+function parseFlag(value) {
+  const text = String(value ?? '').trim().toLowerCase()
+  return text === '1' || text === 'true' || text === 'yes' || text === 'on'
+}
+
+for (const entry of String(process.env.RELAY_ACCESS_KEYS || '').split(',')) {
+  const text = entry.trim()
+  if (!text) continue
+  const match = ACCESS_KEY_RE.exec(text)
+  if (!match) {
+    console.error(
+      '[pilot-connector] RELAY_ACCESS_KEYS 里的条目格式不正确，应为 id:secret（secret 至少 16 个字符）：' +
+        text.slice(0, 40),
+    )
+    process.exit(1)
+  }
+  if (ACCESS_KEYS.has(match[1])) {
+    console.error(`[pilot-connector] RELAY_ACCESS_KEYS 里 id 重复：${match[1]}`)
+    process.exit(1)
+  }
+  ACCESS_KEYS.set(match[1], match[2])
+}
+if (ACCESS_STRICT && ACCESS_KEYS.size === 0) {
+  // Strict mode with no codes is an outage, not a policy: refuse to start
+  // instead of silently locking every device out.
+  console.error('[pilot-connector] RELAY_ACCESS_STRICT 已开启但没有配置 RELAY_ACCESS_KEYS')
+  process.exit(1)
+}
 
 function normalizeIp(value) {
   const ip = String(value || '')
@@ -105,6 +154,54 @@ function releaseIpSlot(ip) {
   const used = (ipConnections.get(ip) || 0) - 1
   if (used > 0) ipConnections.set(ip, used)
   else ipConnections.delete(ip)
+}
+
+function safeEqual(left, right) {
+  const a = Buffer.from(String(left), 'utf8')
+  const b = Buffer.from(String(right), 'utf8')
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
+
+/**
+ * Decide whether this socket may take part in the room protocol.
+ *
+ * With no codes configured the relay behaves exactly like 0.2.2 (open), so a
+ * self-hoster who never opts in sees no change. With codes configured but
+ * strict off, an anonymous (or wrong-code) socket is still admitted so a
+ * rollout cannot lock out devices that have not been updated yet; it is only
+ * counted and logged. Strict rejects the handshake with 4009.
+ */
+function authorize(socket, value) {
+  if (ACCESS_KEYS.size === 0) return true
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (text) {
+    const match = ACCESS_KEY_RE.exec(text)
+    const expected = match ? ACCESS_KEYS.get(match[1]) : undefined
+    if (expected && safeEqual(expected, match[2])) {
+      socket.accessId = match[1]
+      return true
+    }
+    accessStats.rejected += 1
+    reject(socket, '连接器准入码不正确')
+    return false
+  }
+  if (ACCESS_STRICT) {
+    accessStats.rejected += 1
+    reject(socket, '连接器要求准入码')
+    return false
+  }
+  accessStats.anonymous += 1
+  const now = Date.now()
+  if (now - lastAnonymousLogAt >= ANONYMOUS_LOG_INTERVAL_MS) {
+    lastAnonymousLogAt = now
+    const ip = normalizeIp(socket.clientIp || '') || 'unknown'
+    console.warn(
+      `[pilot-connector] 收到无准入码的连接（来源 ${ip}），当前 RELAY_ACCESS_STRICT=0 仍放行；` +
+        '各端都更新后请把它设为 1。',
+    )
+  }
+  return true
 }
 
 function json(response, status, body) {
@@ -283,6 +380,7 @@ function handleHello(socket, frame) {
     reject(socket, '连接器房间标识不正确')
     return
   }
+  if (!authorize(socket, frame.access)) return
   if (typeof key !== 'string' || !KEY_RE.test(key)) {
     reject(socket, '连接器房间密钥不正确')
     return
@@ -464,6 +562,12 @@ const server = createServer((request, response) => {
       phones,
       sources: ipConnections.size,
       blockedSources: BLOCKED_IPS.size,
+      access: {
+        strict: ACCESS_STRICT,
+        codes: ACCESS_KEYS.size,
+        anonymous: accessStats.anonymous,
+        rejected: accessStats.rejected,
+      },
     })
     return
   }

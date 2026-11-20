@@ -1,19 +1,19 @@
 {
   "name": "Pilot Connector",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "channel": "stable",
   "requires": "Node.js >= 22.12",
-  "date": "2026-11-19",
+  "date": "2026-11-20",
   "installScript": "https://download.medpilot.cc/pilot/connector/install.sh",
   "linux": {
-    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz",
-    "size": 62884,
-    "sha256": "5c83e140fbe396893706bffab17de4bcb0072ce86a826f0f5efe3ca506ffdbe2"
+    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.3-linux.tar.gz",
+    "size": 67481,
+    "sha256": "a041db834bf00280c385450a767f6bebad468811f52e13a0a17fdce29ebfb404"
   },
   "windows": {
-    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-windows.zip",
-    "size": 75618,
-    "sha256": "8ad4a4a758b7fc46a44402210249ab0d152f950e61269d3bf91694197c19e6e0"
+    "url": "https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.3-windows.zip",
+    "size": 80568,
+    "sha256": "0b84d244114bcf5849cd01c79ca3a15b6c934572b0854f5c624103b2e59ecb8d"
   },
-  "notes": "中继器新增按来源的连接上限与断流开关：同一个 IP 的并发连接默认最多 64 条（MAX_CONNECTIONS_PER_IP，设为 0 关闭此限制），超出即拒绝；写进 RELAY_BLOCK_IPS 的来源在握手阶段直接断开。服务端 /healthz 增加 sources 与 blockedSources 两个计数，方便运营方发现异常来源并整段切断。转发逻辑、盲中继承诺与协议都没有变化。"
+  "notes": "L1 准入码 + 随机连接路径：安装脚本自动生成 home:<随机> 准入码与 /c/<随机> 路径并打印整条连接串；中继在建房间前校验准入码，码不对以 4009 拒绝，日志与 /healthz 暴露 anonymous/rejected 计数。默认 RELAY_ACCESS_STRICT=0 只记录不拦截，确认各端升级后再改 1。转发逻辑、盲中继承诺与协议不变。"
 }

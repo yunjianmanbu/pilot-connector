@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-VERSION="${PILOT_CONNECTOR_VERSION:-0.2.2}"
+VERSION="${PILOT_CONNECTOR_VERSION:-0.2.3}"
 BASE_URL="${PILOT_CONNECTOR_BASE_URL:-https://download.medpilot.cc/pilot/connector}"
 NODE_VERSION="${NODE_VERSION:-22.12.0}"
 NODE_MIRROR="${NODE_MIRROR:-https://nodejs.org/dist}"
@@ -18,7 +18,13 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/pilot-connector}"
 SERVICE_USER="${SERVICE_USER:-pilot}"
 PORT="${PORT:-8789}"
 BIND="${BIND:-127.0.0.1}"
-WS_PATH="${WS_PATH:-/connector}"
+# 空值 = 自动生成一条不可猜的路径（/c/<32 位十六进制>）。
+WS_PATH="${WS_PATH:-}"
+# 空值 = 自动生成一条 home:<32 位十六进制> 准入码。
+ACCESS_KEYS="${RELAY_ACCESS_KEYS:-}"
+ACCESS_STRICT="${RELAY_ACCESS_STRICT:-0}"
+MAX_CONNECTIONS_PER_IP="${MAX_CONNECTIONS_PER_IP:-12}"
+MAX_ROOMS="${MAX_ROOMS:-500}"
 DOMAIN=""
 EMAIL=""
 SETUP_NGINX=1
@@ -32,7 +38,10 @@ usage() {
   --port <端口>     中继器监听端口（默认 8789）
   --bind <地址>     监听地址（默认 127.0.0.1，建议只监听回环）
   --dir <目录>      安装目录（默认 /opt/pilot-connector）
-  --version <版本>  中继器版本（默认 0.2.2）
+  --version <版本>  中继器版本（默认 0.2.3）
+  --path <路径>     WebSocket 路径（默认自动生成 /c/<32 位十六进制>）
+  --access-key <id:secret>  准入码（默认自动生成 home:<随机值>，可逗号分隔多条）
+  --strict          强制要求准入码；不加则只记录不拦截（便于灰度）
   --no-nginx        即使提供域名，也不自动配置 nginx
   -h, --help        显示帮助
 
@@ -40,6 +49,8 @@ usage() {
   NODE_VERSION     需要安装的 Node.js 版本（默认 22.12.0）
   NODE_MIRROR      Node.js 下载镜像（默认 https://nodejs.org/dist）
   PILOT_CONNECTOR_BASE_URL  安装包与校验文件所在目录
+  RELAY_ACCESS_KEYS / RELAY_ACCESS_STRICT / MAX_CONNECTIONS_PER_IP / MAX_ROOMS
+                   与上面同名命令行参数等价，直接写进 systemd 环境变量
 EOF
 }
 
@@ -68,6 +79,18 @@ while [ "$#" -gt 0 ]; do
     --version)
       VERSION="${2:-}"
       shift 2
+      ;;
+    --path)
+      WS_PATH="${2:-}"
+      shift 2
+      ;;
+    --access-key)
+      ACCESS_KEYS="${2:-}"
+      shift 2
+      ;;
+    --strict)
+      ACCESS_STRICT=1
+      shift
       ;;
     --no-nginx)
       SETUP_NGINX=0
@@ -120,6 +143,24 @@ case "$WS_PATH" in
     exit 1
     ;;
 esac
+
+if [ -z "$WS_PATH" ]; then
+  WS_PATH="/c/$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+fi
+if [ -z "$ACCESS_KEYS" ]; then
+  ACCESS_KEYS="home:$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+fi
+case "$ACCESS_STRICT" in
+  0|1) ;;
+  *)
+    echo "RELAY_ACCESS_STRICT 只能是 0 或 1：$ACCESS_STRICT" >&2
+    exit 1
+    ;;
+esac
+if ! printf '%s' "$ACCESS_KEYS" | grep -Eq '^[A-Za-z0-9_-]+:[A-Za-z0-9_-]{16,128}(,[A-Za-z0-9_-]+:[A-Za-z0-9_-]{16,128})*$'; then
+  echo "准入码格式不正确，应为 id:secret（secret 至少 16 个字符），多条用逗号分隔：$ACCESS_KEYS" >&2
+  exit 1
+fi
 
 case "$(uname -s)" in
   Linux) ;;
@@ -219,6 +260,10 @@ Environment=NODE_ENV=production
 Environment=PORT=${PORT}
 Environment=BIND=${BIND}
 Environment=WS_PATH=${WS_PATH}
+Environment=RELAY_ACCESS_KEYS=${ACCESS_KEYS}
+Environment=RELAY_ACCESS_STRICT=${ACCESS_STRICT}
+Environment=MAX_CONNECTIONS_PER_IP=${MAX_CONNECTIONS_PER_IP}
+Environment=MAX_ROOMS=${MAX_ROOMS}
 ExecStart=${NODE_BIN} ${INSTALL_DIR}/server.mjs
 Restart=always
 RestartSec=2
@@ -301,13 +346,20 @@ EOF
 
   certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "${EMAIL}" --redirect
   echo ""
-  echo "✓ 中继器已就绪：wss://${DOMAIN}${WS_PATH}"
-  echo "  把上面的地址填到 Pilot 的「手机连接 → 自建中继器 → 中继地址」。"
+  echo "✓ 中继器已就绪：wss://${DOMAIN}${WS_PATH}#k=${ACCESS_KEYS}"
+  if [ "${ACCESS_STRICT}" -eq 1 ]; then
+    echo "  准入码已强制生效（RELAY_ACCESS_STRICT=1）。把上面整条连接串粘到 Pilot 的「手机连接 → 自建中继器 → 中继地址」。"
+  else
+    echo "  准入码目前只记录不拦截（RELAY_ACCESS_STRICT=0）。把上面整条连接串粘到 Pilot 的中继地址，"
+    echo "  确认各端都能连上后，把 /etc/systemd/system/pilot-connector.service 里的 RELAY_ACCESS_STRICT 改成 1，"
+    echo "  再执行 systemctl daemon-reload && systemctl restart pilot-connector。"
+  fi
+  echo "  #k= 之后是准入码，不要单独发出去；换密码就改这里的 RELAY_ACCESS_KEYS 并重启。"
 else
   echo ""
   echo "✓ 中继器已启动：http://${BIND}:${PORT}${WS_PATH}"
-  echo "  手机连接要求 wss://。请用 nginx / Caddy 反向代理并配置 TLS，"
-  echo "  然后把 wss://你的域名${WS_PATH} 填到 Pilot 的中继地址。"
+  echo "  手机连接要求 wss://。请用 nginx / Caddy 反向代理并配置 TLS（location = ${WS_PATH}），"
+  echo "  然后把 wss://你的域名${WS_PATH}#k=${ACCESS_KEYS} 填到 Pilot 的中继地址。"
 fi
 
 echo "  服务管理：systemctl status pilot-connector / journalctl -u pilot-connector -f"

@@ -1,0 +1,56 @@
+name: CI
+
+# 中继连接器的强制关卡：语法检查 + 装依赖 + 起进程探活 /healthz。
+# 这个仓库没有单元测试，用「能不能起来并回 200」代替。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: syntax + boot smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Syntax check
+        run: node --check server.mjs
+
+      # 滥用止损开关（按来源 IP 连接上限 / IP 黑名单）的回归：RESPONSIBLE_USE.md 里对运营方
+      # 承诺的两个开关必须真的生效，改动 upgrade 逻辑时由它把关。
+      - name: Abuse controls
+        run: npm test
+
+      - name: Boot and probe /healthz
+        run: |
+          PORT=8799 BIND=127.0.0.1 node server.mjs &
+          server_pid=$!
+          for _ in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:8799/healthz" >/dev/null 2>&1; then
+              echo "healthz OK"
+              kill "$server_pid"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::server did not answer /healthz within 30s"
+          kill "$server_pid" 2>/dev/null || true
+          exit 1

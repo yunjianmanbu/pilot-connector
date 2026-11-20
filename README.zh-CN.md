@@ -2,6 +2,7 @@
 
 [English](README.md) | **中文**
 
+[![CI](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml/badge.svg)](https://github.com/yunjianmanbu/pilot-connector/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/yunjianmanbu/pilot-connector?color=blue)](https://github.com/yunjianmanbu/pilot-connector/releases)
 [![Discussions](https://img.shields.io/badge/discussions-open-2ea44f.svg)](https://github.com/yunjianmanbu/pilot/discussions)
@@ -38,10 +39,13 @@ curl -fsSL https://download.medpilot.cc/pilot/connector/install.sh \
 1. 缺少 Node.js 22.12+ 时自动安装；
 2. 下载中继器并校验 SHA-256；
 3. 创建 `pilot` 系统用户、`/opt/pilot-connector` 与 systemd 服务；
-4. 配置 nginx，把 `/connector` 反向代理到 `127.0.0.1:8789`；
-5. 用 certbot 申请 HTTPS 证书，最后输出 `wss://relay.example.com/connector`。
+4. 生成一条随机 WebSocket 路径与一条准入码，配置 nginx 把这条路径反向代理到 `127.0.0.1:8789`；
+5. 用 certbot 申请 HTTPS 证书，最后输出整条连接串 `wss://relay.example.com/c/<随机值>#k=<准入码>`。
 
-把输出的地址填到 Pilot 的「手机连接 → 自建中继器 → 中继地址」。
+把输出的**整条**连接串（包括 `#k=` 之后的部分）填到 Pilot 的「手机连接 → 自建中继器 → 中继地址」。
+屏幕上只显示不含准入码的地址，码存在设置里，不会随截图或日志外泄。
+
+默认 `RELAY_ACCESS_STRICT=0`：码先只记录不拦截，等其他设备都升级完再改成 1。
 
 没有域名时可以只在本机启动：
 
@@ -49,13 +53,14 @@ curl -fsSL https://download.medpilot.cc/pilot/connector/install.sh \
 curl -fsSL https://download.medpilot.cc/pilot/connector/install.sh | sudo bash
 ```
 
-之后自行用 nginx / Caddy 配置 TLS，再填写 `wss://.../connector`。
+之后自行用 nginx / Caddy 配置 TLS，再填写脚本输出的整条 `wss://.../c/<随机值>#k=<准入码>`。
 
 ## 手动启动
 
 ```bash
 npm install --omit=dev
-PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
+PORT=8789 BIND=127.0.0.1 WS_PATH=/c/9f3a2c7e18b46d05af3c72e95d1406b8 \
+  RELAY_ACCESS_KEYS=home:7d1c9e04aa0b4f1e8c2d5b6a7f8091c3 node server.mjs
 ```
 
 健康检查：`curl http://127.0.0.1:8789/healthz`
@@ -63,7 +68,7 @@ PORT=8789 BIND=127.0.0.1 WS_PATH=/connector node server.mjs
 滥用止损开关的回归（需要先 `npm install`）：
 
 ```bash
-npm test    # 4 个用例：按来源 IP 连接上限 / IP 黑名单 / 握手失败不占额 / 上限关闭
+npm test    # 12 个用例：按来源 IP 连接上限 / IP 黑名单 / 握手失败不占额 / 上限关闭 / 准入码与随机路径
 ```
 
 环境变量：
@@ -72,10 +77,39 @@ npm test    # 4 个用例：按来源 IP 连接上限 / IP 黑名单 / 握手失
 | --- | --- | --- |
 | `PORT` | `8787` | 监听端口（安装脚本默认 `8789`） |
 | `BIND` | `127.0.0.1` | 监听地址，建议只监听回环并由 nginx 反代 |
-| `WS_PATH` | `/connector` | WebSocket 升级路径 |
+| `WS_PATH` | `/connector` | WebSocket 升级路径。安装脚本默认生成 `/c/<32 位十六进制>`，让扫描器找不到入口 |
 | `HOST_GRACE_MS` | `30000` | 电脑端断开后保留手机连接的宽限期 |
 | `MAX_CONNECTIONS_PER_IP` | `64` | 同一来源地址并发连接上限（`0` 关闭）。大型办公室共用同一个出口 IP 时需要调高 |
 | `RELAY_BLOCK_IPS` | 空 | 在 upgrade 阶段直接拒给的来源地址，逗号分隔 |
+| `RELAY_ACCESS_KEYS` | 空 | L1 准入码，`id:secret` 形式（secret 至少 16 字符），多条用逗号分隔。带 id 才能单独吊销一台设备 |
+| `RELAY_ACCESS_STRICT` | `0` | `0` 只把无码连接计入 `/healthz.access.anonymous` 并在日志里记一行；`1` 直接以 `4009` 拒绝。开了它却没配 `RELAY_ACCESS_KEYS` 时中继拒绝启动 |
+
+## 准入码与随机路径
+
+公网中继被贴进博客、群聊之后，最现实的风险不是有入侵者，而是地址变成了
+免费带宽。中继 0.2.3 加了一道 **L1 准入码**，刻意做得很轻：
+
+- 连接串形如 `wss://relay.example.com/c/9f3a…#k=home:7d1c9e04…`。`#k=` 之后是
+  准入码，安装脚本（`install.sh` / `install.ps1`）默认自动生成一条随机路径和
+  一条随机码并直接打印整串。
+- 码放在 `relay.hello` 的 `access` 字段里，不进 URL 路径，不进 E2E 层。中继
+  在**建房间之前**校验它，所以码不对的连接连一个空房间都不会留下。
+- 它不加密内容（E2E 负责），也挡不住有人把整条连接串转发出去。它挡的是
+  “扫到地址就能用”。要更强就意味着账号与设备注册，那是另一个量级的东西，
+  自建中继的定位用不上。
+- 灰度靠 `RELAY_ACCESS_STRICT`：先配码不强制，`/healthz` 会给出
+  `access.anonymous` 计数（表示还有多少连接没带码），确认各端都已升级后再
+  把它改成 `1`。
+
+```bash
+# 一次配两条，之后想只吊销 desk 这台就删掉那一条
+RELAY_ACCESS_KEYS="home:$(openssl rand -hex 24),desk:$(openssl rand -hex 24)" \
+RELAY_ACCESS_STRICT=1 PORT=8789 node server.mjs
+```
+
+轮换：改 `RELAY_ACCESS_KEYS` 后重启中继，再把新连接串重新填进电脑端的「中继
+地址」。旧码立刻失效，手机的旧配对会在下一次重连时拿到 `4009` 并按提示重新
+扫码。
 
 ## 连接恢复
 

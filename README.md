@@ -64,6 +64,8 @@ Then terminate TLS yourself with nginx / Caddy and configure `wss://.../c/<rando
 
 ## Start manually
 
+![Three ways to run the connector](docs/diagrams/en/deploy.png)
+
 ```bash
 npm install --omit=dev
 PORT=8789 BIND=127.0.0.1 WS_PATH=/c/9f3a2c7e18b46d05af3c72e95d1406b8 \

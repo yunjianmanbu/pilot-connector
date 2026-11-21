@@ -59,6 +59,8 @@ curl -fsSL https://download.medpilot.cc/pilot/connector/install.sh | sudo bash
 
 ## 手动启动
 
+![中继的三种跑法](docs/diagrams/zh/deploy.png)
+
 ```bash
 npm install --omit=dev
 PORT=8789 BIND=127.0.0.1 WS_PATH=/c/9f3a2c7e18b46d05af3c72e95d1406b8 \

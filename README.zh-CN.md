@@ -15,6 +15,8 @@ Pilot 手机连接的云端盲中继。它只按房间转发 WebSocket 帧，不
 > **运营方与用户：** 只给自己拥有或已获授权的设备用。项目政策、禁止用途、
 > 滥用举报渠道（`[ABUSE]`）与运营方可用的断流开关见 [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md)。
 
+![盲中继：只按房间转发，不持有密钥](docs/diagrams/zh/topology.png)
+
 ## 下载
 
 - Linux：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz>
@@ -110,6 +112,14 @@ RELAY_ACCESS_STRICT=1 PORT=8789 node server.mjs
 轮换：改 `RELAY_ACCESS_KEYS` 后重启中继，再把新连接串重新填进电脑端的「中继
 地址」。旧码立刻失效，手机的旧配对会在下一次重连时拿到 `4009` 并按提示重新
 扫码。
+
+| `relay.hello`：每个字段都由客户端自己选 | 拒绝发生在分配资源之前 |
+| --- | --- |
+| ![hello 字段](docs/diagrams/zh/relay-admission-open.png) | ![拒绝顺序](docs/diagrams/zh/relay-admission-order.png) |
+
+| 一张票：四个字段 + 一个 HMAC | 密钥藏在 URL 片段里 |
+| --- | --- |
+| ![票据](docs/diagrams/zh/relay-admission-ticket.png) | ![URL](docs/diagrams/zh/relay-admission-url.png) |
 
 ## 连接恢复
 

@@ -18,6 +18,8 @@ deploy your own.
 > Project policy, prohibited uses, the abuse reporting channel (`[ABUSE]`) and the operator's
 > cut-off levers are in [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md).
 
+![Blind relay: it routes rooms, it holds no keys](docs/diagrams/en/topology.png)
+
 ## Download
 
 - Linux: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz>
@@ -116,6 +118,14 @@ RELAY_ACCESS_STRICT=1 PORT=8789 node server.mjs
 Rotation: change `RELAY_ACCESS_KEYS`, restart the connector, then paste the new connection string
 into the desktop again. The old code stops working immediately; existing phones get `4009` on their
 next reconnect and the app tells the user to rescan.
+
+| `relay.hello`: every field is client-chosen | The refusal happens before anything is allocated |
+| --- | --- |
+| ![Hello fields](docs/diagrams/en/relay-admission-open.png) | ![Refusal order](docs/diagrams/en/relay-admission-order.png) |
+
+| A ticket: four fields and one HMAC | The secret sits in the URL fragment |
+| --- | --- |
+| ![Ticket](docs/diagrams/en/relay-admission-ticket.png) | ![URL](docs/diagrams/en/relay-admission-url.png) |
 
 ## Connection recovery
 

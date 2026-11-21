@@ -9,6 +9,8 @@
 
 **官网与下载：** <https://pilot.medpilot.cc/zh.html#connector-download> —— 截图、演示视频与各平台安装包。
 
+**更新记录：** [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md) —— 每个版本改了什么，最新的在最上面。
+
 Pilot 手机连接的云端盲中继。它只按房间转发 WebSocket 帧，不保存消息，也不持有端到端密钥。
 **Pilot 官方不提供公共中继服务**，需要跨网络使用手机连接时请自行部署。
 

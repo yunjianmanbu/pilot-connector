@@ -9,6 +9,8 @@
 
 **Website & installers:** <https://pilot.medpilot.cc/#connector-download> — screenshots, demo video and every download.
 
+**Changelog:** [CHANGELOG.md](CHANGELOG.md) — what changed in each release, newest first.
+
 A blind cloud relay for piloting your phone. It forwards WebSocket frames by room only — it never
 stores messages and never holds the end-to-end keys.
 **There is no public relay run by the Pilot project** — to reach your phone across networks,

@@ -17,12 +17,12 @@ Pilot 手机连接的云端盲中继。它只按房间转发 WebSocket 帧，不
 > **运营方与用户：** 只给自己拥有或已获授权的设备用。项目政策、禁止用途、
 > 滥用举报渠道（`[ABUSE]`）与运营方可用的断流开关见 [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md)。
 
-![盲中继：只按房间转发，不持有密钥](docs/diagrams/zh/topology.png)
+![Pilot Connector 动起来：盲中继，以及三种跑法](docs/social/zh/demo.gif)
 
 ## 下载
 
-- Linux：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz>
-- Windows：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-windows.zip>
+- Linux：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.3-linux.tar.gz>
+- Windows：<https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.3-windows.zip>
 - 一键安装脚本：<https://download.medpilot.cc/pilot/connector/install.sh>
 
 两个包都包含 `server.mjs`、`ws` 依赖、systemd / nginx 示例，以及文档里引用的 `LICENSE` /

@@ -20,12 +20,12 @@ deploy your own.
 > Project policy, prohibited uses, the abuse reporting channel (`[ABUSE]`) and the operator's
 > cut-off levers are in [`RESPONSIBLE_USE.md`](../community/RESPONSIBLE_USE.md).
 
-![Blind relay: it routes rooms, it holds no keys](docs/diagrams/en/topology.png)
+![Pilot Connector in motion: a blind relay, and three ways to run it](docs/social/en/demo.gif)
 
 ## Download
 
-- Linux: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-linux.tar.gz>
-- Windows: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.2-windows.zip>
+- Linux: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.3-linux.tar.gz>
+- Windows: <https://download.medpilot.cc/pilot/connector/pilot-connector-0.2.3-windows.zip>
 - One-line installer: <https://download.medpilot.cc/pilot/connector/install.sh>
 
 Both packages ship `server.mjs`, the `ws` dependency, systemd / nginx samples and the `LICENSE` /

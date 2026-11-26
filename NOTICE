@@ -10,7 +10,7 @@ Apache-2.0 第 6 条不授予商标权：Pilot、Pilot Link 的名称与 Logo �
 ========
 
 pilot-connector（本仓库）只包含中继器：按房间转发 WebSocket 帧的盲转发服务、安装脚本
-与 systemd / nginx 示例。它与同项目的桌面客户端、Android 被控端、手机反控端采用完全
+与 systemd / nginx 示例。它与同项目的桌面客户端、Android 手机端采用完全
 相同的 Apache-2.0 协议，不存在双授权或附加条款。
 
 自建或商业托管中继服务无需额外授权，无需向任何人申请，也无需公开改造后的源码，
